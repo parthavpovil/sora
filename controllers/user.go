@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -96,7 +97,7 @@ func generateToken(userId int,userName string)(string,error){
 
 func Login() gin.HandlerFunc{
 	return func(c *gin.Context) {
-		var user models.User
+		var user UserReq
 		var retrived models.User
 
 		err :=c.BindJSON(&user)
@@ -106,26 +107,29 @@ func Login() gin.HandlerFunc{
 			})
 			return
 		}
+		fmt.Println(user)
 		result :=database.DB.Where("username=?",user.Username).First(&retrived)
 
 		if result.Error !=nil{
 			c.JSON(http.StatusUnauthorized,gin.H{
 				"error":"user not found",
+				"message":result.Error,
 			})
 			return 
 		}
-		err =verifypass(retrived.Password_hash,user.Password_hash)
+		err =verifypass(retrived.Password_hash,user.Password)
 		if err !=nil{
 			c.JSON(http.StatusUnauthorized,gin.H{
 				"error":"user/password wrong",
 			})
 			return 
 		}
-		token,err :=generateToken(*user.Id,user.Username)
+		token,err :=generateToken(*retrived.Id,retrived.Username)
 		if err!=nil{
 			c.JSON(http.StatusInternalServerError,gin.H{
 				"error":"error geratig token",
 			})
+			return 
 		}
 		c.JSON(http.StatusOK,gin.H{
 			"token":token,
