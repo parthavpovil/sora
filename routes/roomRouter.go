@@ -11,5 +11,7 @@ func RoomRoutes(incomingRoutes *gin.Engine) {
 	protected.Use(middleware.JWTverify())
 	{
 		protected.POST("rooms/create", controllers.CreateRoom())
+		protected.POST("/rooms/:roomid/join",controllers.JoinRoom())
+		protected.POST("/rooms/:roomid/leave",controllers.LeaveRoom())
 	}
 }
