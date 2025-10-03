@@ -124,7 +124,7 @@ func Login() gin.HandlerFunc{
 			})
 			return 
 		}
-		token,err :=generateToken(*retrived.Id,retrived.Username)
+		token,err :=generateToken(retrived.Id,retrived.Username)
 		if err!=nil{
 			c.JSON(http.StatusInternalServerError,gin.H{
 				"error":"error geratig token",

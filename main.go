@@ -16,6 +16,7 @@ func main() {
 	log.Println("✅ Migration complete, DB ready")
 	r := gin.Default()
 	routes.UserRoutes(r)
+	routes.RoomRoutes(r)
 	r.GET("/ws", controllers.HandleConnections)
 	r.GET("/ping", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{

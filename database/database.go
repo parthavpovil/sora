@@ -18,7 +18,26 @@ func InitDb()  {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	db.AutoMigrate(&models.User{}, &models.Message{})
+	err = db.AutoMigrate(&models.User{})
+    if err != nil {
+        log.Printf("Failed to migrate User: %v", err)
+    }
+
+    err = db.AutoMigrate(&models.Room{})
+    if err != nil {
+        log.Printf("Failed to migrate Room: %v", err)
+    }
+
+    err = db.AutoMigrate(&models.Message{})
+    if err != nil {
+        log.Printf("Failed to migrate Message: %v", err)
+    }
+
+    err = db.AutoMigrate(&models.RoomMembers{})
+    if err != nil {
+        log.Printf("Failed to migrate RoomMembers: %v", err)
+    }
+	
 	DB=db
 	
 }

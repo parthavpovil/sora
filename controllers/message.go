@@ -1,98 +1,97 @@
 package controllers
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/parthavpovil/sora/models"
-	"github.com/parthavpovil/sora/database"
 	"github.com/gorilla/websocket"
-
+	"github.com/parthavpovil/sora/database"
+	"github.com/parthavpovil/sora/middleware"
+	"github.com/parthavpovil/sora/models"
 )
 
-type Client struct{
-
-
+type Client struct {
+	Conn     *websocket.Conn
+	UserID   int
+	Username string
 }
+
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {return true},
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var clients = make(map[*websocket.Conn]bool)
-var broadcast =make(chan []byte)
+var clients = make(map[*websocket.Conn]*Client)
+var broadcast = make(chan models.Message)
 
-func HandleConnections(c *gin.Context){
-	ws,err :=upgrader.Upgrade(c.Writer,c.Request,nil)
+func HandleConnections(c *gin.Context) {
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 
-	if err !=nil{
+	if err != nil {
 		return
 	}
 	defer ws.Close()
-	clients[ws]=true
 
-	for{
-		_,msg,err :=ws.ReadMessage()
-		if err !=nil{
-			delete(clients,ws)
+	tokenString := c.Query("token")
+	tokenString = strings.TrimSpace(tokenString)
+
+	if tokenString == "" {
+		ws.WriteMessage(websocket.TextMessage, []byte("missing token"))
+		ws.Close()
+		return
+	}
+	claims, err := middleware.ParseToken(tokenString)
+
+	if err != nil {
+		fmt.Printf("Token parse error: %v\n", err)
+		fmt.Printf("Token string: %s\n", tokenString)
+		ws.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+		ws.Close()
+		return
+	}
+
+	client := &Client{
+		Conn:     ws,
+		UserID:   int(claims["userId"].(float64)),
+		Username: claims["username"].(string),
+	}
+	clients[ws] = client
+
+	for {
+		_, msg, err := ws.ReadMessage()
+		if err != nil {
+			delete(clients, ws)
 			break
 		}
-		broadcast <-msg
+
+		message := &models.Message{
+			User_id:    client.UserID,
+			Username:   client.Username,
+			Content:    string(msg),
+			Created_at: time.Now(),
+		}
+		err = database.DB.Create(&message).Error
+		if err != nil {
+			ws.WriteMessage(websocket.TextMessage, []byte("failed to add to db"))
+		}
+
+		broadcast <- *message
 	}
 }
 
-func HandleMessage(){
-	for{
+func HandleMessage() {
+	for {
 		msg := <-broadcast
-		for client :=range clients{
-			err :=client.WriteMessage(websocket.TextMessage,msg)
-			if err !=nil{
+		for client := range clients {
+			jsonMsg, _ := json.Marshal(msg)
+			err := client.WriteMessage(websocket.TextMessage, jsonMsg)
+			if err != nil {
 				client.Close()
-				delete(clients,client)
+				delete(clients, client)
 			}
 		}
-	}
-}
-
-func SentMsg() gin.HandlerFunc{
-	return  func(c *gin.Context){
-
-		var msg models.Message
-		err :=c.BindJSON(&msg)
-		if err !=nil{
-			c.JSON(http.StatusBadRequest,gin.H{
-				"error":err.Error(),
-			})
-			return 
-		}
-		userIdInterface,exit :=c.Get("userId")
-		if !exit{
-			   c.JSON(http.StatusUnauthorized, gin.H{
-                "error": "user not authenticated",
-            })
-            return
-        }
-		
-		userId, _ := userIdInterface.(float64)
-		userIdInt := int(userId) 
-		msg.User_id =&userIdInt
-		
-		now := time.Now()
-		msg.Created_at = &now
-
-		err =database.DB.Create(&msg).Error
-		if err !=nil{
-			c.JSON(http.StatusInternalServerError,gin.H{
-				"error": "failed to save message",
-			})
-			return 
-		}
-		c.JSON(http.StatusOK, gin.H{
-            "message": "message sent successfully",
-            "data": msg,
-        })
-
-
-
 	}
 }
