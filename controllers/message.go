@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,12 +13,17 @@ import (
 	"github.com/parthavpovil/sora/database"
 	"github.com/parthavpovil/sora/middleware"
 	"github.com/parthavpovil/sora/models"
+	"gorm.io/gorm"
 )
 
 type Client struct {
 	Conn     *websocket.Conn
 	UserID   int
 	Username string
+}
+type IncomingMessage struct {
+    RoomID  int    `json:"room_id"`
+    Content string `json:"content"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -67,15 +73,31 @@ func HandleConnections(c *gin.Context) {
 			break
 		}
 
+		var incoming IncomingMessage
+		err=json.Unmarshal(msg,&incoming)
+		if err!=nil{
+			ws.WriteMessage(websocket.TextMessage, []byte("invalid message format cant sent"))
+        continue
+		}
+		err =database.DB.Where("user_id=? AND room_id=?",client.UserID,incoming.RoomID).First(&models.RoomMembers{}).Error
+
+		if errors.Is(err,gorm.ErrRecordNotFound){
+			ws.WriteMessage(websocket.TextMessage,[]byte("user not in room"))
+			continue
+		}
+
 		message := &models.Message{
 			User_id:    client.UserID,
 			Username:   client.Username,
-			Content:    string(msg),
+			Room_id: incoming.RoomID,
+			Content:    incoming.Content,
 			Created_at: time.Now(),
 		}
+		
 		err = database.DB.Create(&message).Error
 		if err != nil {
 			ws.WriteMessage(websocket.TextMessage, []byte("failed to add to db"))
+			continue
 		}
 
 		broadcast <- *message
@@ -85,13 +107,23 @@ func HandleConnections(c *gin.Context) {
 func HandleMessage() {
 	for {
 		msg := <-broadcast
-		for client := range clients {
-			jsonMsg, _ := json.Marshal(msg)
-			err := client.WriteMessage(websocket.TextMessage, jsonMsg)
-			if err != nil {
-				client.Close()
-				delete(clients, client)
-			}
+		var members []int
+		database.DB.Model(&models.RoomMembers{}).Where("room_id=?",msg.Room_id).Pluck("user_id",&members)
+
+		memberMap := make(map[int]bool)
+		for _,userID:= range members{
+			memberMap[userID]=true
+		} 
+	
+		for conn,client := range clients {
+			if memberMap[client.UserID]{
+				jsonMsg, _ := json.Marshal(msg)
+				err := conn.WriteMessage(websocket.TextMessage, jsonMsg)
+				if err != nil {
+					conn.Close()
+					delete(clients, conn)
+				}
 		}
+	}
 	}
 }

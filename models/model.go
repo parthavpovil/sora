@@ -11,10 +11,10 @@ type User struct{
 type Message struct{
     Id int	`gorm:"primaryKey;autoIncrement" json:"id"`
     User_id int `gorm:"not null" json:"user_id"`
-    User User `gorm:"foreignKey:User_id" json:"user,omitempty"`  
+    User User `gorm:"foreignKey:User_id" json:"-"` 
     Username string `gorm:"not null" json:"user_name"`
     Room_id int `gorm:"not null" json:"room_id"`
-    Room Room `gorm:"foreignKey:Room_id" json:"room,omitempty"`  
+    Room Room `gorm:"foreignKey:Room_id" json:"-"`  
     Content string `gorm:"not null" json:"content"`
     Created_at time.Time `gorm:"not null" json:"created_at"`
 }
